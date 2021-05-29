@@ -1,114 +1,68 @@
-cmake_minimum_required(VERSION 3.18)
+cmake_minimum_required(VERSION 3.5)
+project(jtyd-trade-broker CXX)
 
-set(APP_BUILD_VERSION "0.0.1")
+include(CheckIncludeFileCXX)
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules")
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_C_STANDARD 99)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+check_include_file_cxx(any HAS_ANY)
+check_include_file_cxx(string_view HAS_STRING_VIEW)
+check_include_file_cxx(coroutine HAS_COROUTINE)
+if (HAS_ANY AND HAS_STRING_VIEW AND HAS_COROUTINE)
+    set(CMAKE_CXX_STANDARD 20)
+elseif (HAS_ANY AND HAS_STRING_VIEW)
+    set(CMAKE_CXX_STANDARD 17)
+else ()
+    set(CMAKE_CXX_STANDARD 14)
+endif ()
 
-set(CMAKE_CXX_COMPILER "clang++")
-set(CMAKE_C_COMPILER "clang")
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-set_property(GLOBAL PROPERTY FIND_LIBRARY_USE_LIB64_PATHS ON)
+add_executable(${PROJECT_NAME} src/main.cpp)
 
-set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
-set(BUILD_SHARED_LIBS OFF)
+# ##############################################################################
+# If you include the drogon source code locally in your project, use this method
+# to add drogon 
+ add_subdirectory(third_party/drogon)
+ target_link_libraries(${PROJECT_NAME} PRIVATE drogon)
+#
+# and comment out the following lines
+#find_package(Drogon CONFIG REQUIRED)
+#target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -Wall -pedantic -Wextra")
+# ##############################################################################
 
-if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Weverything")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-c++98-compat")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-c++98-compat-pedantic")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-missing-noreturn")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-missing-prototypes")
-  set(CMAKE_CXX_FLAGS
-      "${CMAKE_CXX_FLAGS} -Wno-gnu-zero-variadic-macro-arguments")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libstdc++")
-endif()
+if (CMAKE_CXX_STANDARD LESS 17)
+    # With C++14, use boost to support any and string_view
+    message(STATUS "use c++14")
+    find_package(Boost 1.61.0 REQUIRED)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${Boost_INCLUDE_DIRS})
+elseif (CMAKE_CXX_STANDARD LESS 20)
+    message(STATUS "use c++17")
+else ()
+    message(STATUS "use c++20")
+endif ()
 
-# set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
-# set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
-# set(CMAKE_PKGCONFIG_OUTPUT_DIRECTORY
-# ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/pkgconfig)
-# set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+#aux_source_directory(controllers CTL_SRC)
+#aux_source_directory(filters FILTER_SRC)
+#aux_source_directory(plugins PLUGIN_SRC)
+#aux_source_directory(models MODEL_SRC)
 
-if(DEFINED ENV{VCPKG_ROOT} AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
-  set(CMAKE_TOOLCHAIN_FILE
-      "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-      CACHE STRING "")
-endif()
+#drogon_create_views(${PROJECT_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/views
+#                    ${CMAKE_CURRENT_BINARY_DIR})
+# use the following line to create views with namespaces.
+# drogon_create_views(${PROJECT_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/views
+#                     ${CMAKE_CURRENT_BINARY_DIR} TRUE)
 
-if(DEFINED ENV{VCPKG_DEFAULT_TRIPLET} AND NOT DEFINED VCPKG_TARGET_TRIPLET)
-  set(VCPKG_TARGET_TRIPLET
-      "$ENV{VCPKG_DEFAULT_TRIPLET}"
-      CACHE STRING "")
-endif()
-
-if(NOT CMAKE_BUILD_TYPE)
-  message(STATUS "No build type selected, default to Debug")
-  set(CMAKE_BUILD_TYPE "Debug")
-endif()
-
-execute_process(
-  COMMAND git log -1 --format=%h
-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-  OUTPUT_VARIABLE GIT_COMMIT_HASH
-  OUTPUT_STRIP_TRAILING_WHITESPACE)
-
-project(jtyd_trade_broker)
-
-if(EXISTS ${PROJECT_SOURCE_DIR}/include)
-  include_directories(${PROJECT_SOURCE_DIR}/include)
-endif()
-
-set(OPENSSL_USE_STATIC_LIBS ON)
-find_package(Threads)
-find_package(OpenSSL)
-
-add_definitions(-DBUILD_VERSION="${APP_BUILD_VERSION}")
-add_definitions(-DBUILD_ID="${GIT_COMMIT_HASH}")
-add_definitions(-DBUILD_ARCH="${CMAKE_HOST_SYSTEM_PROCESSOR}")
-
-file(GLOB_RECURSE SRC_FILES "src/*.cpp" "src/*.c" "src/*.h")
-
-if(EXISTS "${PROJECT_SOURCE_DIR}/src/main.cpp"
-   OR EXISTS "${PROJECT_SOURCE_DIR}/src/main.c")
-  # set(CMAKE_EXE_LINKER_FLAGS "-static -static-libgcc -static-libstdc++")
-  add_executable(${PROJECT_NAME} ${SRC_FILES})
-  add_custom_target(run ./${PROJECT_NAME})
-else()
-  add_library(${PROJECT_NAME} ${SRC_FILES})
-  target_include_directories(${PROJECT_NAME} PUBLIC ${PROJECT_SOURCE_DIR}/src)
-
-  if(EXISTS "${CMAKE_SOURCE_DIR}/tests")
-    add_subdirectory(tests)
-    enable_testing()
-    add_test(test_all tests/run_tests)
-  endif()
-endif()
-
-macro(SUBDIRLIST result curdir)
-  file(
-    GLOB children
-    RELATIVE ${curdir}
-    ${curdir}/*)
-  set(dirlist "")
-  foreach(child ${children})
-    if(IS_DIRECTORY ${curdir}/${child})
-      list(APPEND dirlist ${child})
-    endif()
-  endforeach()
-  set(${result} ${dirlist})
-endmacro()
-subdirlist(SUB_DIRS ${CMAKE_SOURCE_DIR}/third_party)
-foreach(SUB_DIR ${SUB_DIRS})
-  add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/${SUB_DIR})
-endforeach()
-
-target_link_libraries(${PROJECT_NAME} drogon)
-target_link_libraries(${PROJECT_NAME} Threads::Threads)
-if(OPENSSL_FOUND)
-  target_link_libraries(${PROJECT_NAME} OpenSSL::SSL OpenSSL::Crypto)
-endif()
+#target_include_directories(${PROJECT_NAME}
+#                           PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+#                                   ${CMAKE_CURRENT_SOURCE_DIR}/models)
+#target_sources(${PROJECT_NAME}
+#               PRIVATE
+#               ${SRC_DIR}
+#               ${CTL_SRC}
+#               ${FILTER_SRC}
+#               ${PLUGIN_SRC}
+#               ${MODEL_SRC})
+# ##############################################################################
+# uncomment the following line for dynamically loading views 
+# set_property(TARGET ${PROJECT_NAME} PROPERTY ENABLE_EXPORTS ON)
